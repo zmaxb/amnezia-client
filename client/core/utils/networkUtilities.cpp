@@ -16,6 +16,9 @@
     #include <QSettings>
 #endif
 #ifdef Q_OS_LINUX
+    #include <QScopeGuard>
+    #include <cerrno>
+    #include <cstring>
     #include <arpa/inet.h>
     #include <linux/netlink.h>
     #include <linux/rtnetlink.h>
@@ -291,125 +294,121 @@ QPair<QString, QNetworkInterface> NetworkUtilities::getGatewayAndIface()
     return { resGateway, QNetworkInterface::interfaceFromIndex(resIndex) };
 #endif
 #ifdef Q_OS_LINUX
-    constexpr int BUFFER_SIZE = 8192;
-    int     received_bytes = 0, msg_len = 0, route_attribute_len = 0;
-    int     sock = -1, msgseq = 0;
-    struct  nlmsghdr *nlh, *nlmsg;
-    struct  rtmsg *route_entry;
-    // This struct contain route attributes (route type)
-    struct  rtattr *route_attribute;
-    char    gateway_address[INET_ADDRSTRLEN], interface[IF_NAMESIZE];
-    char    msgbuf[100], buffer[BUFFER_SIZE];
-    char    *ptr = buffer;
-    struct timeval tv;
-
-    if ((sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE)) < 0) {
-        perror("socket failed");
+    // A route dump consists of multiple datagrams. Never accumulate the whole
+    // table into a fixed buffer: split tunneling can install thousands of routes.
+    const int sock = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
+    if (sock < 0)
         return {};
-    }
+    const auto closeSocket = qScopeGuard([sock] { close(sock); });
 
-    memset(msgbuf, 0, sizeof(msgbuf));
-    memset(gateway_address, 0, sizeof(gateway_address));
-    memset(interface, 0, sizeof(interface));
-    memset(buffer, 0, sizeof(buffer));
-
-    /* point the header and the msg structure pointers into the buffer */
-    nlmsg = (struct nlmsghdr *)msgbuf;
-
-    /* Fill in the nlmsg header*/
-    nlmsg->nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
-    nlmsg->nlmsg_type = RTM_GETROUTE; // Get the routes from kernel routing table .
-    nlmsg->nlmsg_flags = NLM_F_DUMP | NLM_F_REQUEST; // The message is a request for dump.
-    nlmsg->nlmsg_seq = msgseq++; // Sequence of the message packet.
-    nlmsg->nlmsg_pid = getpid(); // PID of process sending the request.
-
-    /* 1 Sec Timeout to avoid stall */
-    tv.tv_sec = 1;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
-    /* send msg */
-    if (send(sock, nlmsg, nlmsg->nlmsg_len, 0) < 0) {
-        perror("send failed");
+    timeval timeout {};
+    timeout.tv_sec = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
         return {};
-    }
 
-    /* receive response */
-    do
-    {
-        received_bytes = recv(sock, ptr, sizeof(buffer) - msg_len, 0);
-        if (received_bytes < 0) {
-            perror("Error in recv");
+    struct {
+        nlmsghdr header;
+        rtmsg route;
+    } request {};
+    request.header.nlmsg_len = NLMSG_LENGTH(sizeof(rtmsg));
+    request.header.nlmsg_type = RTM_GETROUTE;
+    request.header.nlmsg_flags = NLM_F_DUMP | NLM_F_REQUEST;
+    request.header.nlmsg_seq = 1;
+    request.route.rtm_family = AF_INET;
+
+    sockaddr_nl kernel {};
+    kernel.nl_family = AF_NETLINK;
+    if (sendto(sock, &request, request.header.nlmsg_len, 0,
+               reinterpret_cast<sockaddr *>(&kernel), sizeof(kernel)) < 0)
+        return {};
+
+    QString gateway;
+    int interfaceIndex = 0;
+    quint32 bestMetric = 0;
+    bool found = false;
+    for (;;) {
+        char peek;
+        ssize_t size;
+        do {
+            size = recv(sock, &peek, sizeof(peek), MSG_PEEK | MSG_TRUNC);
+        } while (size < 0 && errno == EINTR);
+        if (size <= 0)
             return {};
-        }
 
-        nlh = (struct nlmsghdr *) ptr;
-
-        /* Check if the header is valid */
-        if((NLMSG_OK(nlh, received_bytes) == 0) ||
-            (nlh->nlmsg_type == NLMSG_ERROR))
-        {
-            perror("Error in received packet");
+        QByteArray buffer(size, Qt::Uninitialized);
+        ssize_t received;
+        do {
+            received = recv(sock, buffer.data(), buffer.size(), 0);
+        } while (received < 0 && errno == EINTR);
+        if (received <= 0)
             return {};
-        }
 
-        /* If we received all data break */
-        if (nlh->nlmsg_type == NLMSG_DONE)
-            break;
-        else {
-            ptr += received_bytes;
-            msg_len += received_bytes;
-        }
-
-        /* Break if its not a multi part message */
-        if ((nlh->nlmsg_flags & NLM_F_MULTI) == 0)
-            break;
-    }
-    while ((nlh->nlmsg_seq != msgseq) || (nlh->nlmsg_pid != getpid()));
-
-    /* parse response */
-    int remaining = msg_len + received_bytes;
-    nlh = (struct nlmsghdr *) buffer;
-    for ( ; NLMSG_OK(nlh, remaining); nlh = NLMSG_NEXT(nlh, remaining))
-    {
-        /* Get the route data */
-        route_entry = (struct rtmsg *) NLMSG_DATA(nlh);
-
-        /* We are just interested in main routing table */
-        if (route_entry->rtm_table != RT_TABLE_MAIN)
-            continue;
-
-        /* Reset per-route to avoid cross-route state pollution */
-        memset(gateway_address, 0, sizeof(gateway_address));
-        memset(interface, 0, sizeof(interface));
-
-        route_attribute = (struct rtattr *) RTM_RTA(route_entry);
-        route_attribute_len = RTM_PAYLOAD(nlh);
-
-        /* Loop through all attributes */
-        for ( ; RTA_OK(route_attribute, route_attribute_len);
-             route_attribute = RTA_NEXT(route_attribute, route_attribute_len))
-        {
-            switch(route_attribute->rta_type) {
-            case RTA_OIF:
-                if_indextoname(*(int *)RTA_DATA(route_attribute), interface);
-                break;
-            case RTA_GATEWAY:
-                inet_ntop(AF_INET, RTA_DATA(route_attribute),
-                          gateway_address, sizeof(gateway_address));
-                break;
-            default:
-                break;
+        int remaining = static_cast<int>(received);
+        for (auto *message = reinterpret_cast<nlmsghdr *>(buffer.data());
+             NLMSG_OK(message, remaining); message = NLMSG_NEXT(message, remaining)) {
+            if (message->nlmsg_seq != request.header.nlmsg_seq)
+                continue;
+            if (message->nlmsg_flags & NLM_F_DUMP_INTR)
+                return {}; // Do not use an inconsistent table snapshot.
+            if (message->nlmsg_type == NLMSG_DONE) {
+                return { gateway, QNetworkInterface::interfaceFromIndex(interfaceIndex) };
             }
-        }
+            if (message->nlmsg_type == NLMSG_ERROR) {
+                if (message->nlmsg_len < NLMSG_LENGTH(sizeof(nlmsgerr)) ||
+                    reinterpret_cast<nlmsgerr *>(NLMSG_DATA(message))->error != 0)
+                    return {};
+                continue;
+            }
+            if (message->nlmsg_type != RTM_NEWROUTE ||
+                message->nlmsg_len < NLMSG_LENGTH(sizeof(rtmsg)))
+                continue;
 
-        if ((*gateway_address) && (*interface)) {
-            qDebug() << "Gateway " << gateway_address << " for interface " << interface;
-            break;
+            const auto *route = reinterpret_cast<rtmsg *>(NLMSG_DATA(message));
+            if (route->rtm_family != AF_INET || route->rtm_dst_len != 0 ||
+                route->rtm_type != RTN_UNICAST)
+                continue;
+
+            quint32 table = route->rtm_table;
+            quint32 metric = 0;
+            int index = 0;
+            in_addr address {};
+            int attributesSize = RTM_PAYLOAD(message);
+            for (auto *attribute = RTM_RTA(route); RTA_OK(attribute, attributesSize);
+                 attribute = RTA_NEXT(attribute, attributesSize)) {
+                switch (attribute->rta_type) {
+                case RTA_OIF:
+                    if (RTA_PAYLOAD(attribute) >= sizeof(index))
+                        memcpy(&index, RTA_DATA(attribute), sizeof(index));
+                    break;
+                case RTA_GATEWAY:
+                    if (RTA_PAYLOAD(attribute) >= sizeof(address))
+                        memcpy(&address, RTA_DATA(attribute), sizeof(address));
+                    break;
+                case RTA_PRIORITY:
+                    if (RTA_PAYLOAD(attribute) >= sizeof(metric))
+                        memcpy(&metric, RTA_DATA(attribute), sizeof(metric));
+                    break;
+                case RTA_TABLE:
+                    if (RTA_PAYLOAD(attribute) >= sizeof(table))
+                        memcpy(&table, RTA_DATA(attribute), sizeof(table));
+                    break;
+                default:
+                    break;
+                }
+            }
+            if (table != RT_TABLE_MAIN || !index || !address.s_addr ||
+                (found && metric >= bestMetric))
+                continue;
+
+            char text[INET_ADDRSTRLEN];
+            if (!inet_ntop(AF_INET, &address, text, sizeof(text)))
+                continue;
+            gateway = QString::fromLatin1(text);
+            interfaceIndex = index;
+            bestMetric = metric;
+            found = true;
         }
     }
-    if (!(*gateway_address) || !(*interface))
-        qDebug() << "getGatewayAndIface: no gateway found";
-    close(sock);
-    return { gateway_address, QNetworkInterface::interfaceFromName(interface) };
 #endif
 #if defined(Q_OS_MAC) && !defined(Q_OS_IOS) && !defined(MACOS_NE)
     QString gateway;
