@@ -1,0 +1,134 @@
+name: Community Linux build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['fix/linux-large-route-dumps']
+    paths:
+      - 'client/**'
+      - 'service/**'
+      - 'common/**'
+      - 'ipc/**'
+      - 'recipes/**'
+      - 'tests/linux-default-route/**'
+      - 'cmake/**'
+      - 'deploy/**'
+      - 'CMakeLists.txt'
+      - 'version.h.in'
+      - 'conanfile.py'
+      - '.github/workflows/fork-linux.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      QT_VERSION: 6.10.1
+      RELEASE_LABEL: 5.0.3.0-large-routes.1
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build pkg-config patchelf \
+            libsecret-1-dev libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libxcb-keysyms1 \
+            libxcb-image0 libxcb-icccm4 libxcb-render-util0 iproute2 util-linux
+          python -m pip install 'conan==2.28.0' 'aqtinstall==3.3.0' 'cmake==3.31.6'
+
+      - uses: actions/cache@v4
+        id: qt-cache
+        with:
+          path: ${{ runner.temp }}/Qt
+          key: linux-qt-6.10.1-ifw-4.7-v1
+
+      - name: Install Qt and Installer Framework
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          aqt install-qt linux desktop "$QT_VERSION" linux_gcc_64 \
+            -m qtremoteobjects qt5compat qtshadertools --outputdir "$RUNNER_TEMP/Qt"
+          aqt install-tool linux desktop tools_ifw qt.tools.ifw.47 \
+            --outputdir "$RUNNER_TEMP/Qt"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: linux22-conan2.28-${{ hashFiles('conanfile.py', 'recipes/**', 'cmake/platform_settings.cmake') }}
+          restore-keys: linux22-conan2.28-
+
+      - name: Test upstream failure and patched gateway lookup
+        run: |
+          python tests/linux-default-route/regression.py \
+            --qt-include "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/include" \
+            --qt-lib "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/lib" \
+            > gateway-regression.json
+          cat gateway-regression.json
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja -C cmake/fork-linux-release.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64" \
+            -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$GITHUB_WORKSPACE=. -ffile-prefix-map=$RUNNER_TEMP=/tmp/build"
+          cmake --build build --parallel 2
+
+      - name: Build offline installer
+        env:
+          QTIFWDIR: ${{ runner.temp }}/Qt/Tools/QtInstallerFramework/4.7
+        run: |
+          cd build
+          cpack -G IFW \
+            -D "QTIFWDIR=$QTIFWDIR" \
+            -D 'CPACK_IFW_PACKAGE_TITLE=AmneziaVPN (community large-routes build)'
+          mkdir -p ../dist
+          mv AmneziaVPN_5.0.3.0_linux_x64.run \
+            "../dist/AmneziaVPN_${RELEASE_LABEL}_linux_x64.run"
+
+      - name: Record build provenance and checksums
+        run: |
+          cp gateway-regression.json dist/
+          cp LICENSE THIRD_PARTY_LICENSES.md dist/
+          {
+            echo "release=$RELEASE_LABEL"
+            echo "upstream=5.0.3.0"
+            echo "commit=$(git rev-parse HEAD)"
+            echo "runner=ubuntu-22.04 x86_64"
+            echo "qt=$QT_VERSION"
+            echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            cmake --version | head -1
+            g++ --version | head -1
+            conan --version
+          } > dist/BUILD-INFO.txt
+          cd dist
+          sha256sum AmneziaVPN_*.run BUILD-INFO.txt gateway-regression.json \
+            LICENSE THIRD_PARTY_LICENSES.md > SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64-${{ env.RELEASE_LABEL }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload diagnostic regression output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-regression-diagnostic
+          path: gateway-regression.json

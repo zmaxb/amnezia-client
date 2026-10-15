@@ -1,5 +1,10 @@
 # Amnezia VPN
 
+> **Community Linux build:** this fork fixes gateway discovery with large split
+> tunneling route lists. It is based on upstream **5.0.3.0** and is not an
+> official Amnezia release. See the [change and English test report](docs/large-split-routes/README.md)
+> and [installation, rollback, and build instructions](docs/large-split-routes/BUILD-AND-INSTALL.md).
+
 ### _The best client for self-hosted VPN_
 
 

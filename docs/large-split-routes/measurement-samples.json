@@ -1,0 +1,265 @@
+{
+  "validation_date": "2026-10-15",
+  "upstream_tag": "5.0.3.0",
+  "upstream_commit": "de93650a90739b87bb47a632872ea9d0adc9412f",
+  "fix_commit": "59089ca",
+  "scope": "Linux IPv4 site exclusions with self-hosted AmneziaWG 2",
+  "fixture": {
+    "kind": "private IP-only export; not distributed",
+    "bytes": 829925,
+    "ipv4_cidrs": 8589
+  },
+  "throughput_unit": "decimal Mbit/s",
+  "payload_bytes": 416000084,
+  "matrix": [
+    {
+      "case": "none",
+      "kill_switch": false,
+      "connect_s": 0.5591401599813253,
+      "disconnect_s": 0.4019011229975149,
+      "missing": 0,
+      "after_off_main_routes": 2,
+      "https_download": {
+        "n": 2,
+        "min": 40.712032,
+        "median": 40.716828,
+        "max": 40.721624,
+        "samples": [
+          40.721624,
+          40.712032
+        ]
+      },
+      "download_to_vps": {
+        "n": 3,
+        "min": 12.494296,
+        "median": 17.090688,
+        "max": 45.476152,
+        "samples": [
+          45.476152,
+          12.494296,
+          17.090688
+        ]
+      },
+      "upload_to_vps": {
+        "n": 3,
+        "min": 22.760832,
+        "median": 33.30388,
+        "max": 44.115536,
+        "samples": [
+          33.30388,
+          44.115536,
+          22.760832
+        ]
+      },
+      "https_request_median_s": 0.471448
+    },
+    {
+      "case": "70",
+      "kill_switch": false,
+      "connect_s": 0.5570782059803605,
+      "disconnect_s": 0.40149148600175977,
+      "missing": 0,
+      "after_off_main_routes": 2,
+      "https_download": {
+        "n": 2,
+        "min": 40.865112,
+        "median": 43.943256000000005,
+        "max": 47.0214,
+        "samples": [
+          47.0214,
+          40.865112
+        ]
+      },
+      "download_to_vps": {
+        "n": 3,
+        "min": 11.377968,
+        "median": 21.97336,
+        "max": 44.938592,
+        "samples": [
+          21.97336,
+          44.938592,
+          11.377968
+        ]
+      },
+      "upload_to_vps": {
+        "n": 3,
+        "min": 24.76688,
+        "median": 45.90976,
+        "max": 49.527048,
+        "samples": [
+          45.90976,
+          49.527048,
+          24.76688
+        ]
+      },
+      "https_request_median_s": 0.463496
+    },
+    {
+      "case": "full",
+      "kill_switch": false,
+      "connect_s": 10.701410955982283,
+      "disconnect_s": 12.144877948972862,
+      "missing": 0,
+      "after_off_main_routes": 2,
+      "https_download": {
+        "n": 2,
+        "min": 44.791928,
+        "median": 45.2605,
+        "max": 45.729072,
+        "samples": [
+          44.791928,
+          45.729072
+        ]
+      },
+      "download_to_vps": {
+        "n": 3,
+        "min": 6.789792,
+        "median": 10.904592,
+        "max": 13.979984,
+        "samples": [
+          6.789792,
+          10.904592,
+          13.979984
+        ]
+      },
+      "upload_to_vps": {
+        "n": 3,
+        "min": 18.236896,
+        "median": 31.309008,
+        "max": 45.922608,
+        "samples": [
+          31.309008,
+          18.236896,
+          45.922608
+        ]
+      },
+      "https_request_median_s": 0.456574
+    },
+    {
+      "case": "full",
+      "kill_switch": true,
+      "connect_s": 21.93639762501698,
+      "disconnect_s": 16.365751940989867,
+      "missing": 0,
+      "after_off_main_routes": 2,
+      "https_download": {
+        "n": 2,
+        "min": 42.6864,
+        "median": 44.122203999999996,
+        "max": 45.558008,
+        "samples": [
+          45.558008,
+          42.6864
+        ]
+      },
+      "download_to_vps": {
+        "n": 3,
+        "min": 5.374464,
+        "median": 8.737608,
+        "max": 66.760376,
+        "samples": [
+          66.760376,
+          8.737608,
+          5.374464
+        ]
+      },
+      "upload_to_vps": {
+        "n": 3,
+        "min": 12.441912,
+        "median": 21.4558,
+        "max": 46.02952,
+        "samples": [
+          21.4558,
+          46.02952,
+          12.441912
+        ]
+      },
+      "https_request_median_s": 0.464742
+    }
+  ],
+  "upstream_control": [
+    {
+      "case": "none",
+      "connect_s": 0.30621096200775355,
+      "connected": true,
+      "missing": 0,
+      "expected": 0,
+      "after_off_main_routes": 2,
+      "fds_during": 15
+    },
+    {
+      "case": "70",
+      "connect_s": 0.4057347410125658,
+      "connected": true,
+      "missing": 0,
+      "expected": 70,
+      "after_off_main_routes": 2,
+      "fds_during": 15
+    },
+    {
+      "case": "full",
+      "connect_s": 1.0062611070461571,
+      "connected": true,
+      "missing": 8479,
+      "expected": 8589,
+      "after_off_main_routes": 113,
+      "fds_during": 8495
+    }
+  ],
+  "repeat_cycles": [
+    {
+      "connect_s": 12.538021195970941,
+      "disconnect_s": 12.223195161030162,
+      "missing": 0,
+      "http_exit": 0,
+      "after_off_main_routes": 2
+    },
+    {
+      "connect_s": 12.269335846009199,
+      "disconnect_s": 12.227725584001746,
+      "missing": 0,
+      "http_exit": 0,
+      "after_off_main_routes": 2
+    },
+    {
+      "connect_s": 12.525803513010032,
+      "disconnect_s": 12.226255042012781,
+      "missing": 0,
+      "http_exit": 0,
+      "after_off_main_routes": 2
+    }
+  ],
+  "normal_executable": {
+    "connect_s": 12.511011804977898,
+    "healthy_idle_samples": 6,
+    "idle_http_failures": 0,
+    "normal_gui_disconnect_s": 11.879665540996939,
+    "normal_gui_disconnect_routes": 2
+  },
+  "normal_route_validation": {
+    "expected": 8589,
+    "missing": 0,
+    "wrong_path": 0
+  },
+  "kill_switch": {
+    "blocked_https_exit_codes": [
+      28,
+      28
+    ],
+    "unblocked_https_exit_code": 0
+  },
+  "route_churn": {
+    "changes": 562,
+    "missing": 0,
+    "https_exit": 0
+  },
+  "host_preservation": {
+    "monitor_minutes": 36.325656394163765,
+    "https_checks": 73,
+    "https_failures": 0,
+    "process_changes": 0,
+    "files_unchanged": true,
+    "routes_unchanged": true,
+    "rules_unchanged": true
+  }
+}

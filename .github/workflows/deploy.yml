@@ -1,9 +1,9 @@
 name: 'Deploy workflow'
 
 on:
-  push:
-    branches:
-      - '**'
+  # The fork has a separate Linux workflow. Keep upstream multi-platform
+  # deployment available manually without running its secret-dependent jobs.
+  workflow_dispatch:
 
 env:
   QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/ # https://download.qt.io/static/mirrorlist/
@@ -1593,4 +1593,3 @@ jobs:
           emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -accel on
           disable-animations: true
           script: bash ci_run_android_tests.sh
-
